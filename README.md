@@ -20,8 +20,12 @@ Both features can be toggled independently from the tray icon, which also has a 
    https://raw.githubusercontent.com/unkn0wncode/seanime-plugins/main/plugins/rains-utils/manifest.json
    ```
 
-3. Grant the requested permissions (**playback**, **storage**) when prompted.
+3. Grant the requested permissions when prompted (**playback**, **storage**, and the **dom-script-manipulation** unsafe flag — see below).
 4. Play something, pick a subtitle track / quality in the player menu — the choice is saved and re-applied on the next episode.
+
+### Why the "unsafe" permission
+
+Seanime exposes **no quality API to plugins** — HLS quality levels are switched entirely inside the web player. The only way to apply a saved quality is to operate the player's own Quality menu, which requires running script in the app's DOM. That is gated behind the `dom-script-manipulation` unsafe flag, so the plugin declares it. Consequences, per Seanime: **auto-updates are disabled** for the plugin and the UI shows an unsafe warning. The subtitle/caption feature does **not** need this flag (it uses the real playback API) — if you don't want quality restore, you can strip the flag and the quality toggle and keep the rest.
 
 ### Notes
 

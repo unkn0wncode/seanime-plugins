@@ -1,7 +1,7 @@
 {
   "id": "rain-utils",
   "name": "Rain's Utils",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "manifestURI": "https://raw.githubusercontent.com/unkn0wncode/seanime-plugins/main/plugins/rains-utils/manifest.json",
   "language": "typescript",
   "type": "plugin",
@@ -17,7 +17,15 @@
       "scopes": [
         "playback",
         "storage"
-      ]
+      ],
+      "allow": {
+        "unsafeFlags": [
+          {
+            "flag": "dom-script-manipulation",
+            "reason": "Restore your saved video quality by operating the player's Quality menu (Seanime exposes no quality API to plugins)."
+          }
+        ]
+      }
     }
   }
 }

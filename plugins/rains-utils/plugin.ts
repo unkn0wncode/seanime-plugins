@@ -225,14 +225,17 @@ function init() {
         // Quality save/restore.
         // There is no VideoCore API or server event for quality (HLS levels are switched
         // purely client-side), so restore drives the player's own Quality menu invisibly
-        // via injected page JS. Injection: the plugin DOM API appends created <script>
-        // elements empty (they never execute), but inline event handlers set through
-        // setInnerHTML do — an <img onerror> carries the payload.
+        // via page JS. Seanime sanitizes setInnerHTML (blocking <script>, onerror, etc.)
+        // unless the plugin holds the "dom-script-manipulation" unsafe flag — declared in
+        // manifest.json. With it granted, the sanitizer is bypassed and an <img onerror>
+        // fires the payload on insertion (innerHTML-inserted <script> never executes, so
+        // the image-error handler is the reliable trigger). The broken data URI errors
+        // immediately with no network request.
         function injectJS(code: string): void {
             try {
                 ctx.dom.createElement("div").then((host: any) => {
                     const enc = encodeURIComponent(code).replace(/'/g, "%27")
-                    host.setInnerHTML("<img src=\"data:,x\" onerror=\"eval(decodeURIComponent('" + enc + "'))\">")
+                    host.setInnerHTML("<img src=\"data:image/gif;base64,!\" onerror=\"eval(decodeURIComponent('" + enc + "'))\">")
                     ctx.setTimeout(() => { try { host.remove() } catch (_e) {} }, 15000)
                 }).catch(() => { log("⚠ inject failed (createElement)") })
             } catch (_e) { log("⚠ inject failed (dom api unavailable)") }
