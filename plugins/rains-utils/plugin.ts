@@ -232,13 +232,15 @@ function init() {
                     const enc = encodeURIComponent(code).replace(/'/g, "%27")
                     host.setInnerHTML("<img src=\"data:,x\" onerror=\"eval(decodeURIComponent('" + enc + "'))\">")
                     ctx.setTimeout(() => { try { host.remove() } catch (_e) {} }, 15000)
-                }).catch(() => { log("· inject failed") })
-            } catch (_e) {}
+                }).catch(() => { log("⚠ inject failed (createElement)") })
+            } catch (_e) { log("⚠ inject failed (dom api unavailable)") }
         }
 
         function qualityRestoreJS(label: string): string {
             return "(function(){" +
                 "var want=" + JSON.stringify(String(label).trim().toLowerCase()) + ";" +
+                "function mark(s){try{document.body.setAttribute('data-aq-qr',s)}catch(e){}}" +
+                "mark('start');" +
                 "if(window.__aqQR){try{window.__aqQR.cancel()}catch(e){}}" +
                 "var dead=Date.now()+" + QUALITY_RESTORE_WINDOW + ";" +
                 "var st=document.createElement('style');" +
@@ -252,16 +254,16 @@ function init() {
                 "function qualityOpen(){var ts=document.querySelectorAll('[data-vc-element=\"menu-title\"]');for(var i=0;i<ts.length;i++){if(norm(ts[i].textContent)==='quality')return true}return false}" +
                 "function tick(){" +
                 "if(done)return;" +
-                "if(Date.now()>dead){cleanup();return}" +
-                "if(!opened){trig=findTrig();if(!trig){setTimeout(tick,400);return}document.head.appendChild(st);trig.click();opened=true;setTimeout(tick,120);return}" +
+                "if(Date.now()>dead){mark(opened?'timeout-menu':'timeout-no-trigger');cleanup();return}" +
+                "if(!opened){trig=findTrig();if(!trig){setTimeout(tick,400);return}document.head.appendChild(st);trig.click();opened=true;mark('opened');setTimeout(tick,120);return}" +
                 "if(!qualityOpen()){setTimeout(tick,150);return}" +
                 "var opts=document.querySelectorAll('[data-vc-element=\"setting-select-option\"]');" +
                 "if(!opts.length){setTimeout(tick,150);return}" +
-                "var target=null;" +
-                "for(var i=0;i<opts.length;i++){var lab=opts[i].querySelector('[data-vc-element=\"setting-select-option-label\"]');if(lab&&norm(lab.textContent)===want){target=opts[i];break}}" +
-                "if(!target){cleanup();return}" +
+                "var target=null,seen=[];" +
+                "for(var i=0;i<opts.length;i++){var lab=opts[i].querySelector('[data-vc-element=\"setting-select-option-label\"]');var lt=lab?norm(lab.textContent):'';seen.push(lt);if(lt===want){target=opts[i];break}}" +
+                "if(!target){mark('no-match ['+seen.join('|')+']');cleanup();return}" +
                 "var ind=target.querySelector('[data-vc-element=\"setting-select-option-indicator\"]');" +
-                "if(!(ind&&ind.querySelector('svg')))target.click();" +
+                "if(ind&&ind.querySelector('svg')){mark('already')}else{target.click();mark('clicked')}" +
                 "cleanup()" +
                 "}" +
                 "tick()" +
@@ -269,14 +271,20 @@ function init() {
         }
 
         function enforceQuality(myGen: number): void {
-            if (myGen !== gen) return
+            if (myGen !== gen) { log("· quality restore skipped (stale gen)"); return }
             if (!persistQuality.get()) return
             const rec = readCascade()
             const q = rec && rec.quality
-            if (!q || !q.label) return
-            if (nowMs() - pendingClick.q <= CLICK_SUPPRESS) return
+            if (!q || !q.label) { log("· quality restore: nothing saved"); return }
+            if (nowMs() - pendingClick.q <= CLICK_SUPPRESS) { log("· quality restore skipped (recent pick)"); return }
             log("→ restoring quality '" + q.label + "'")
             injectJS(qualityRestoreJS(q.label))
+            ctx.setTimeout(() => {
+                if (myGen !== gen) return
+                ctx.dom.queryOne("body").then((b: any) => b ? b.getAttribute("data-aq-qr") : null).then((v: any) => {
+                    log("· restore result: " + (v || "no signal — injected JS never ran"))
+                }).catch(() => { log("· restore result: body query failed") })
+            }, QUALITY_RESTORE_WINDOW + 1000)
         }
 
         function arm(pid: string, fromLoad: boolean): void {
