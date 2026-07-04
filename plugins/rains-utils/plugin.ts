@@ -37,11 +37,16 @@ function init() {
                 return p2(d.getHours()) + ":" + p2(d.getMinutes()) + ":" + p2(d.getSeconds()) + "." + p3(d.getMilliseconds())
             } catch (_e) { return "" }
         }
+        // Log lines arrive in bursts (arm + enforcement) — debounce the storage
+        // write and only push a tray re-render while the log box is visible
+        let logFlushTok = 0
         function log(msg: string): void {
             logs.push(clock() + "  " + msg)
             if (logs.length > LOG_CAP) logs = logs.slice(logs.length - LOG_CAP)
-            sset(LOG_KEY, logs)
-            try { tray.update() } catch (_e) {}
+            logFlushTok++
+            const tok = logFlushTok
+            ctx.setTimeout(() => { if (tok === logFlushTok) sset(LOG_KEY, logs) }, 500)
+            if (logsOpen.get()) { try { tray.update() } catch (_e) {} }
         }
         function shortPid(pid: string): string {
             const s = String(pid || "")
@@ -418,16 +423,28 @@ function init() {
                 })
             } catch (_e) {}
 
-            VC.addEventListener("video-loaded", (e) => arm((e && e.playbackId) || "", true))
-            VC.addEventListener("video-loaded-metadata", (e) => arm((e && e.playbackId) || "", true))
+            // The watchdog only exists for servers that never forward videocore
+            // events — the first real event proves they work, so stop polling
+            let cancelWatchdog: (() => void) | null = null
+            function eventsProven(): void {
+                if (!cancelWatchdog) return
+                try { cancelWatchdog() } catch (_e) {}
+                cancelWatchdog = null
+                log("· watchdog stopped (events work)")
+            }
+
+            VC.addEventListener("video-loaded", (e) => { eventsProven(); arm((e && e.playbackId) || "", true) })
+            VC.addEventListener("video-loaded-metadata", (e) => { eventsProven(); arm((e && e.playbackId) || "", true) })
 
             VC.addEventListener("video-subtitle-track", (e) => {
+                eventsProven()
                 arm((e && e.playbackId) || "", false)
                 const v = (typeof e.trackNumber === "number" && e.trackNumber >= 0) ? e.trackNumber : -1
                 curTrack.sub = v
                 scheduleEnforce("sub")
             })
             VC.addEventListener("video-media-caption-track", (e) => {
+                eventsProven()
                 arm((e && e.playbackId) || "", false)
                 const v = (typeof e.trackIndex === "number" && e.trackIndex >= 0) ? e.trackIndex : -1
                 curTrack.cap = v
@@ -437,7 +454,7 @@ function init() {
             // Some servers never forward videocore events to plugins even though the
             // request/response APIs work — poll the playback info as an arm fallback
             try {
-                ctx.setInterval(() => {
+                cancelWatchdog = ctx.setInterval(() => {
                     const pi = pinfo()
                     const id = (pi && pi.id) ? String(pi.id) : ""
                     if (id && id !== armedPid) { log("· watchdog: playback detected"); arm(id, true) }
@@ -493,7 +510,7 @@ function init() {
         ctx.registerEventHandler("ap-subs", () => { persistSubs.set(!persistSubs.get()); saveCfg(); tray.update() })
         ctx.registerEventHandler("ap-quality", () => { persistQuality.set(!persistQuality.get()); saveCfg(); tray.update() })
         ctx.registerEventHandler("ap-log-copy", () => { try { ctx.dom.clipboard.write(logs.join("\n")) } catch (_e) {} ctx.toast.success("Logs copied to clipboard") })
-        ctx.registerEventHandler("ap-log-clear", () => { logs = []; sset(LOG_KEY, logs); ctx.toast.info("Logs cleared"); tray.update() })
+        ctx.registerEventHandler("ap-log-clear", () => { logs = []; logFlushTok++; sset(LOG_KEY, logs); ctx.toast.info("Logs cleared"); tray.update() })
         ctx.registerEventHandler("ap-log-toggle", () => { logsOpen.set(!logsOpen.get()); tray.update() })
 
         function renderTray(): any {
