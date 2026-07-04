@@ -1,0 +1,14 @@
+[
+  {
+    "id": "rain-utils",
+    "name": "Rain's Utils",
+    "description": "Remembers your player choices: subtitles, captions and video quality.",
+    "author": "unkn0wncode",
+    "type": "plugin",
+    "language": "typescript",
+    "lang": "multi",
+    "icon": "https://raw.githubusercontent.com/unkn0wncode/seanime-plugins/main/plugins/rains-utils/icon.png",
+    "website": "https://github.com/unkn0wncode/seanime-plugins",
+    "manifestURI": "https://raw.githubusercontent.com/unkn0wncode/seanime-plugins/main/plugins/rains-utils/manifest.json"
+  }
+]
