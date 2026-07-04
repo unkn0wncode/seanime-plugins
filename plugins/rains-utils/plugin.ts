@@ -285,12 +285,26 @@ function init() {
             if (nowMs() - pendingClick.q <= CLICK_SUPPRESS) { log("· quality restore skipped (recent pick)"); return }
             log("→ restoring quality '" + q.label + "'")
             injectJS(qualityRestoreJS(q.label))
-            ctx.setTimeout(() => {
+            // The menu-driving runs in the web page (invisible to this log). It stamps
+            // progress onto body[data-aq-qr]; poll that and mirror each state change here
+            // so the log narrates what the injected script is doing.
+            let lastMark = ""
+            let sawAny = false
+            const deadline = nowMs() + QUALITY_RESTORE_WINDOW + 1500
+            const pollMark = () => {
                 if (myGen !== gen) return
                 ctx.dom.queryOne("body").then((b: any) => b ? b.getAttribute("data-aq-qr") : null).then((v: any) => {
-                    log("· restore result: " + (v || "no signal — injected JS never ran"))
-                }).catch(() => { log("· restore result: body query failed") })
-            }, QUALITY_RESTORE_WINDOW + 1000)
+                    if (myGen !== gen) return
+                    const mark = v ? String(v) : ""
+                    if (mark) sawAny = true
+                    if (mark && mark !== lastMark) { lastMark = mark; log("· restore: " + mark) }
+                    const settled = /^(clicked|already|no-match|timeout)/.test(lastMark)
+                    if (settled) return
+                    if (nowMs() >= deadline) { if (!sawAny) log("· restore: no signal — injected JS never ran (unsafe flag not granted?)"); return }
+                    ctx.setTimeout(pollMark, 500)
+                }).catch(() => { if (nowMs() < deadline) ctx.setTimeout(pollMark, 500) })
+            }
+            ctx.setTimeout(pollMark, 400)
         }
 
         function arm(pid: string, fromLoad: boolean): void {
