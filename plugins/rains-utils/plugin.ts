@@ -16,6 +16,7 @@ function init() {
         const REARM_DEDUP = 1500
         const QUALITY_DELAY = 1000
         const QUALITY_RESTORE_WINDOW = 8000
+        const WATCHDOG_INTERVAL = 1500
         const OPT_SEL = "[data-vc-element='setting-select-option']"
         const LABEL_SEL = "[data-vc-element='setting-select-option-label']"
         const TITLE_SEL = "[data-vc-element='menu-title']"
@@ -178,7 +179,8 @@ function init() {
             if (pickPending[kind] || nowMs() - pendingClick[kind] <= CLICK_SUPPRESS) return Promise.resolve("user")
             const sv = savedFor(kind)
             if (!sv) return Promise.resolve("none")
-            if (current === -999) return Promise.resolve("unknown")
+            // current === -999 means no track event arrived (some servers never
+            // forward videocore events) — apply one-shot instead of bailing
             return VC.getTextTracks().then((tracks) => {
                 if (myGen !== gen) return "stale"
                 const subs = (tracks || []).filter((t) => t.type === "subtitles")
@@ -248,7 +250,8 @@ function init() {
                 "st.textContent='[data-radix-popper-content-wrapper]{opacity:0 !important;transition:none !important;animation:none !important}';" +
                 "var opened=false,trig=null,done=false;" +
                 "function norm(s){return String(s||'').trim().toLowerCase()}" +
-                "function cleanup(){if(done)return;done=true;try{if(opened&&trig&&qualityOpen())trig.click()}catch(e){}setTimeout(function(){try{st.remove()}catch(e){}},1200)}" +
+                "function closeMenu(){try{document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,bubbles:true,cancelable:true}))}catch(e){}}" +
+                "function cleanup(){if(done)return;done=true;if(opened&&qualityOpen())closeMenu();setTimeout(function(){try{st.remove()}catch(e){}},1200)}" +
                 "window.__aqQR={cancel:cleanup};" +
                 "function findTrig(){var ps=document.querySelectorAll('[data-vc-element=\"control-button\"] svg path');for(var i=0;i<ps.length;i++){if((ps[i].getAttribute('d')||'')==='M7 3v18'){var b=ps[i].closest('[data-vc-element=\"control-button\"]');if(b)return b}}return null}" +
                 "function qualityOpen(){var ts=document.querySelectorAll('[data-vc-element=\"menu-title\"]');for(var i=0;i<ts.length;i++){if(norm(ts[i].textContent)==='quality')return true}return false}" +
@@ -328,6 +331,7 @@ function init() {
                     if (m) { const key = writeKey(); recordTo(key, { sub: { off: false, language: m.language, label: m.label }, cap: null }); log("✓ saved sub=" + (m.label || m.language) + " @ " + key); done(); return }
                     const cm = matchByLabel(caps, label)
                     if (cm) { const key = writeKey(); recordTo(key, { cap: { off: false, language: cm.language, label: cm.label }, sub: null }); log("✓ saved cap=" + (cm.label || cm.language) + " @ " + key); done(); return }
+                    if (/^(auto$|\d{3,4}p)/i.test(label)) { const key = writeKey(); recordTo(key, { quality: { label: label } }); log("✓ saved quality=" + label + " @ " + key); done(); return }
                     log("· '" + label + "' matched no track — not saved"); done()
                 }).catch(() => { log("· getTextTracks error"); done() })
             }).catch(() => { log("· click: could not read label"); done() })
@@ -412,6 +416,16 @@ function init() {
                 curTrack.cap = v
                 scheduleEnforce("cap")
             })
+
+            // Some servers never forward videocore events to plugins even though the
+            // request/response APIs work — poll the playback info as an arm fallback
+            try {
+                ctx.setInterval(() => {
+                    const pi = pinfo()
+                    const id = (pi && pi.id) ? String(pi.id) : ""
+                    if (id && id !== armedPid) { log("· watchdog: playback detected"); arm(id, true) }
+                }, WATCHDOG_INTERVAL)
+            } catch (_e) {}
         }
 
         function dim(t: string): any {
